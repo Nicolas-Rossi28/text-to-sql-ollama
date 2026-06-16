@@ -7,17 +7,18 @@ def gerar_sql(pergunta: str, schema_banco: str) -> str:
     e retorna a query SQL gerada.
     """
     prompt_sistema = (
-        "Você é um especialista em bancos de dados SQL. "
+        "Você é um especialista estrito em bancos de dados SQL. "
         "Sua tarefa é converter perguntas em linguagem natural em consultas SQL válidas.\n\n"
         "Regras estritas:\n"
         "1. Responda APENAS com o código SQL executável.\n"
         "2. Não adicione explicações, saudações ou textos antes/depois do código.\n"
-        "3. Não use blocos de Markdown (como ```sql ... ```) na sua resposta final se puder, "
-        "mas caso use, garanta que o código esteja correto.\n"
-        "4. Use apenas as tabelas e colunas informadas no contexto abaixo.\n"
-        "5. Não realize qualquer modificação no contexto ou na pergunta.\n"
-        "6. Se a consulta SQL gerada não retornar resultados, responda com 'Nenhum resultado encontrado'.\n"
-        "7. Não realize nenhuma modificação como DELETE, UPDATE ou INSERT. Apenas SELECTs são permitidos."
+        "3. Não use blocos de Markdown (como ```sql ... ```).\n"
+        "4. Use APENAS as tabelas e colunas informadas no contexto abaixo. "
+        "5. Para realizar JOINs (junções), baseie-se estritamente nas Chaves Estrangeiras informadas no contexto.\n"
+        "6. Não realize nenhuma modificação como DELETE, UPDATE ou INSERT. Apenas SELECTs são permitidos.\n"
+        "7. NUNCA invente colunas ou assuma que elas existem se não estiverem explicitamente listadas.\n"
+        "8. IMPORTANTE: Evite usar apelidos (aliases) curtos de uma única letra para as tabelas (como 'c' ou 'ad'). "
+        "Em vez disso, use sempre o nome completo da tabela para referenciar as colunas no SELECT e no WHERE (Exemplo: use 'city.city' em vez de 'c.city'). Isso evita erros de ambiguidade."
     )
     
     prompt_usuario = f"""
@@ -31,7 +32,7 @@ def gerar_sql(pergunta: str, schema_banco: str) -> str:
     
     try:
         resposta = ollama.generate(
-            model='qwen2.5-coder:7b',
+            model='gemma4:e4b', # troquei co qwen2.5-coder:7b, pois errava muito SQL
             system=prompt_sistema,
             prompt=prompt_usuario,
             options={"temperature": 0.1}
@@ -61,6 +62,8 @@ def analisar_dados(pergunta_original: str, dados_brutos: str) -> str:
         "3. Mantenha o tom profissional e focado no contexto da pergunta feita pelo usuário."
         "4. Não use termos técnicos que possam ser difíceis de entender para um público não técnico. Use uma linguagem simples e acessível."
         "5. Seja claro e direto, evitando jargões ou explicações desnecessárias. O objetivo é fornecer insights acionáveis de forma rápida e fácil de entender."
+        "6. Seja honesto e não esconda informações importantes ou detalhes que podem ser prejudiciais para o usuário."
+        "7. Raciocine antes de enviar a resposta final para verificar erros, alucinações ou conclusões precipitadas. Certifique-se de que a análise seja lógica e baseada nos dados apresentados."
     )
     
     prompt_usuario = f"""
@@ -74,7 +77,7 @@ def analisar_dados(pergunta_original: str, dados_brutos: str) -> str:
     
     try:
         resposta = ollama.generate(
-            model='qwen2.5-coder:7b', # Podemos usar o mesmo modelo, ele é ótimo para lógica geral também
+            model='gemma4:e4b', # troquei co qwen2.5-coder:7b, pois errava muito SQL
             system=prompt_sistema,
             prompt=prompt_usuario,
             options={"temperature": 0.5} # Temperatura ligeiramente maior para o texto soar mais natural e menos robótico
