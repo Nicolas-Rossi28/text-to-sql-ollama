@@ -5,99 +5,164 @@ from database import conectar_banco, extrair_esquema, executar_query
 from llm_engine import gerar_sql, analisar_dados
 
 # Configura o título que aparece na aba do navegador e o layout expandido
-st.set_page_config(page_title="Abadats.AI", page_icon="🧙‍♂️",layout="wide")
+st.set_page_config(page_title="Abadats.AI", page_icon="🧙‍♂️", layout="wide")
 
-st.title("🧙‍♂️ ABADATS, O  Assistente de Banco de Dados Text-to-SQL")
+st.title("🧙‍♂️ ABADATS, O Assistente de Banco de Dados Text-to-SQL")
 st.subheader("Converse com seus dados em linguagem natural")
 
-# Criando a barra lateral
+# Inicialização de variáveis de estado para o Chat e Insights
+if 'mensagens' not in st.session_state:
+    st.session_state['mensagens'] = []
+if 'dados_para_insight' not in st.session_state:
+    st.session_state['dados_para_insight'] = None
+if 'pergunta_para_insight' not in st.session_state:
+    st.session_state['pergunta_para_insight'] = ""
+
+# ---------------------------------------------------------------------------
+# BARRA LATERAL — CONFIGURAÇÃO DE CONEXÃO
+# ---------------------------------------------------------------------------
 with st.sidebar:
     st.header(" Configuração da Conexão")
     
-    # Caixa de seleção para o tipo de banco
     tipo_banco = st.selectbox("Tipo do Banco", ["PostgreSQL", "MySQL"])
     
-    # Campos de texto para as credenciais
     host = st.text_input("Host/Servidor", value="localhost")
     porta = st.text_input("Porta", value="5432" if tipo_banco == "PostgreSQL" else "3306")
     usuario = st.text_input("Usuário", value="")
     senha = st.text_input("Senha", type="password")
     nome_banco = st.text_input("Nome do Banco de Dados")
     
-    # Botão para ativar a conexão
     botao_conectar = st.button("Conectar ao Banco")
     
-    # Se o usuário clicar em conectar, tentamos estabelecer a ponte
 if botao_conectar:
     try:
-        # 1. Cria a engine usando nossa função do database.py
         engine = conectar_banco(tipo_banco, usuario, senha, host, porta, nome_banco)
-        
-        # 2. Extrai o esquema completo (com as PKs e FKs que ajustamos)
         esquema = extrair_esquema(engine)
         
-        # 3. Salva tudo na memória da sessão para usar depois
         st.session_state['engine'] = engine
         st.session_state['esquema'] = esquema
         st.session_state['conectado'] = True
+        
+        # Limpa o histórico visual do chat ao conectar em um novo banco
+        st.session_state['mensagens'] = []
+        st.session_state['dados_para_insight'] = None
         
         st.sidebar.success("Conectado com sucesso!")
     except Exception as e:
         st.sidebar.error(f"Erro ao conectar: {str(e)}")
         st.session_state['conectado'] = False
         
-# Se o banco estiver conectado com sucesso, exibe a interface de consulta
+
+# ---------------------------------------------------------------------------
+# INTERFACE PRINCIPAL DE CHAT (só exibe se estiver conectado)
+# ---------------------------------------------------------------------------
 if st.session_state.get('conectado', False):
     
-    # Mostra para o usuário o esquema que a IA está lendo (ajuda a auditar o app)
+    # Mostra para o usuário o esquema que a IA está lendo
     with st.expander(" Mapeamento do Schema Atual (O que a IA enxerga)"):
         st.text(st.session_state['esquema'])
         
-    # Caixa de texto para a pergunta em linguagem natural
-    pergunta = st.text_input(" Digite sua pergunta em português (Ex: 'Quais produtos estão sem estoque?'):")
-    
-    if st.button("Buscar no Banco"):
-        if pergunta:
-            # animação de carregamento
+    st.write("---")
+
+    # 1. RENDERIZA O HISTÓRICO VISUAL
+    for msg in st.session_state['mensagens']:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+            
+            # Se a mensagem do assistente contiver SQL, desenha o bloco de código
+            if "sql" in msg and msg["sql"]:
+                st.code(msg["sql"], language="sql")
+                
+            # Se a mensagem do assistente contiver dados, desenha a tabela
+            if "dados" in msg and msg["dados"] is not None:
+                st.dataframe(msg["dados"])
+
+    # 2. BOTÃO DE INSIGHTS (Aparece logo abaixo da última resposta bem-sucedida)
+    if st.session_state['dados_para_insight'] is not None:
+        col1, col2, col3 = st.columns([4, 4, 2]) # Alinha à direita
+        with col3:
+            if st.button("🔮 Gerar Insights da Última Consulta", use_container_width=True):
+                with st.chat_message("assistant"):
+                    with st.spinner("Analisando os registros gerados..."):
+                        pergunta_ref = st.session_state['pergunta_para_insight']
+                        dados_brutos = st.session_state['dados_para_insight']
+                        
+                        insights = analisar_dados(pergunta_ref, dados_brutos)
+                        
+                        st.info(insights)
+                        
+                        # Salva o insight gerado no histórico do chat
+                        st.session_state['mensagens'].append({
+                            "role": "assistant",
+                            "content": f"**🔮 Insights da Análise:**\n\n{insights}"
+                        })
+                        
+                # Limpa a variável para o botão desaparecer após o uso
+                st.session_state['dados_para_insight'] = None
+                st.rerun()
+
+    # 3. CAMPO DE ENTRADA DO CHAT
+    if pergunta := st.chat_input("Digite sua pergunta em português (Ex: 'Quais produtos estão sem estoque?'):"):
+        
+        # Exibe a pergunta na tela imediatamente
+        with st.chat_message("user"):
+            st.write(pergunta)
+            
+        # Salva a pergunta no histórico visual
+        st.session_state['mensagens'].append({"role": "user", "content": pergunta})
+        
+        # Inicia a resposta do assistente
+        with st.chat_message("assistant"):
             with st.spinner("Pensando... Traduzindo para SQL..."):
-                # Busca a query gerada pelo Qwen
+                
+                # A MÁGICA ACONTECE AQUI: Chamamos a IA apenas com a pergunta atual (sem histórico)
                 sql_gerado = gerar_sql(pergunta, st.session_state['esquema'])
                 
             st.code(sql_gerado, language="sql")
             
             try:
-                # Executa o SQL gerado no nosso banco
                 with st.spinner("Executando query no banco de dados..."):
                     df_resultados = executar_query(sql_gerado, st.session_state['engine'])
                 
-                # Se trouxer dados, exibe a tabela e guarda na sessão para a análise
                 if not df_resultados.empty:
                     st.success(f"Encontrados {len(df_resultados)} registros!")
-                    st.dataframe(df_resultados) # Desenha a tabela bonita na tela
+                    st.dataframe(df_resultados)
                     
-                    # Guarda os dados e a pergunta para a caixinha de insights usar
-                    st.session_state['dados_atuais'] = df_resultados
-                    st.session_state['pergunta_atual'] = pergunta
+                    # Salva a resposta de sucesso no histórico visual
+                    st.session_state['mensagens'].append({
+                        "role": "assistant",
+                        "content": "Aqui estão os resultados encontrados:",
+                        "sql": sql_gerado,
+                        "dados": df_resultados
+                    })
+                    
+                    # Prepara os dados para o botão de insights aparecer (limitando a 100 linhas para economizar memória e contexto)
+                    st.session_state['dados_para_insight'] = df_resultados.head(100).to_markdown(index=False)
+                    st.session_state['pergunta_para_insight'] = pergunta
+                    
                 else:
                     st.warning("A consulta executou, mas o banco retornou zero linhas.")
+                    st.session_state['mensagens'].append({
+                        "role": "assistant",
+                        "content": "A consulta executou perfeitamente, mas o banco retornou zero linhas.",
+                        "sql": sql_gerado
+                    })
+                    st.session_state['dados_para_insight'] = None
                     
             except Exception as sql_err:
-                st.error(f"Erro de execução no Banco de Dados: {str(sql_err)}")
+                texto_erro = f"Erro de execução no Banco de Dados: {str(sql_err)}"
+                st.error(texto_erro)
                 
-    # --- INSIGHTS APÓS OS DADOS ---
-    if 'dados_atuais' in st.session_state:
-        st.write("---") # Linha divisória
-        
-        # O botão de sugestão de análise só aparece após a tabela estar na tela
-        if st.button(" Gerar Análise [Insights do ABADATS🔮] "):
-            with st.spinner("Analisando os registros gerados..."):
-                # Convertemos a tabela de dados em texto simples (Markdown) para o Qwen ler
-                dados_em_texto = st.session_state['dados_atuais'].to_markdown(index=False)
+                # Registra o erro no histórico visual
+                st.session_state['mensagens'].append({
+                    "role": "assistant",
+                    "content": texto_erro,
+                    "sql": sql_gerado
+                })
+                st.session_state['dados_para_insight'] = None
                 
-                # Chama a segunda função do llm_engine.py
-                insights = analisar_dados(st.session_state['pergunta_atual'], dados_em_texto)
-                
-                # Exibe a resposta analítica dentro de uma caixinha de informação azul
-                st.info(insights)
+        # Atualiza a tela para exibir tudo corretamente
+        st.rerun()
+
 else:
-    st.info("Aguardando conexão com o banco de dados na barra lateral para liberar as consultas.")
+    st.info("Aguardando conexão com o banco de dados na barra lateral para liberar o chat.")
