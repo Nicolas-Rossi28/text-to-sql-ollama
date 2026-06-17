@@ -1,10 +1,40 @@
 import ollama
 import re
 
+def _extrair_sql_limpo(texto_bruto: str) -> str:
+    """
+    Forte camada de defesa. Extrai o SQL mesmo se o LLM "grudar" palavras ou enviar tutoriais.
+    """
+    sql = texto_bruto
+    
+    # 1. Tenta extrair de blocos markdown
+    match = re.search(r'```sql\s*(.*?)\s*```', sql, re.DOTALL | re.IGNORECASE)
+    if match:
+        sql = match.group(1)
+    else:
+        match_generico = re.search(r'```\s*(.*?)\s*```', sql, re.DOTALL)
+        if match_generico:
+            sql = match_generico.group(1)
+            
+    # 2. Sniper: Corta tudo antes do primeiro SELECT ou WITH
+    padrao_inicio = re.search(r'(?i)(SELECT|WITH)\s', sql)
+    if padrao_inicio:
+        sql = sql[padrao_inicio.start():]
+        
+    # 3. Corta e joga fora qualquer texto que o LLM tenha escrito DEPOIS do ponto e vírgula
+    if ';' in sql:
+        sql = sql.split(';')[0] + ';'
+        
+    # 4. Limpeza implacável de comentários
+    sql = re.sub(r'/\*.*?\*/', '', sql, flags=re.DOTALL) # Remove /* bloco */
+    sql = re.sub(r'--.*$', '', sql, flags=re.MULTILINE)  # Remove -- linha
+    
+    return sql.strip()
+
 def gerar_sql(pergunta: str, schema_banco: str) -> str:
     """
-    Envia o esquema do banco e a pergunta em linguagem natural para o Qwen
-    e retorna a query SQL gerada.
+    Envia o esquema do banco e a pergunta em linguagem natural para o modelo
+    e retorna a query SQL gerada e limpa.
     """
     prompt_sistema = (
         "Você é um especialista estrito em bancos de dados SQL. "
@@ -19,6 +49,8 @@ def gerar_sql(pergunta: str, schema_banco: str) -> str:
         "7. NUNCA invente colunas ou assuma que elas existem se não estiverem explicitamente listadas.\n"
         "8. IMPORTANTE: Evite usar apelidos (aliases) curtos de uma única letra para as tabelas (como 'c' ou 'ad'). "
         "Em vez disso, use sempre o nome completo da tabela para referenciar as colunas no SELECT e no WHERE (Exemplo: use 'city.city' em vez de 'c.city'). Isso evita erros de ambiguidade."
+        "9. Raciocine antes de enviar a resposta final para verificar erros, alucinações ou conclusões precipitadas. Certifique-se de que a consulta SQL seja lógica e baseada no esquema fornecido."
+        "10. Não comente nada no codigo, apenas crie o sql necessario para a query, sem opcoes multiplas, sem comentarios ou explicações, apenas o SQL puro e simples."
     )
     
     prompt_usuario = f"""
@@ -32,17 +64,16 @@ def gerar_sql(pergunta: str, schema_banco: str) -> str:
     
     try:
         resposta = ollama.generate(
-            model='gemma4:e4b', # troquei co qwen2.5-coder:7b, pois errava muito SQL
+            model='gemma4:e4b', 
             system=prompt_sistema,
             prompt=prompt_usuario,
             options={"temperature": 0.1}
         )
         
-        sql_gerado = resposta['response'].strip()
-        sql_gerado = re.sub(r'```sql\s*|\s*```', '', sql_gerado)
-        sql_gerado = re.sub(r'```\s*|\s*```', '', sql_gerado)
+        texto_bruto = resposta['response']
         
-        return sql_gerado.strip()
+        # Passa o texto pela nossa defesa anti-comentários antes de retornar
+        return _extrair_sql_limpo(texto_bruto)
 
     except Exception as e:
         return f"Erro ao nos comunicar com o Ollama: {str(e)}"
@@ -50,8 +81,8 @@ def gerar_sql(pergunta: str, schema_banco: str) -> str:
 
 def analisar_dados(pergunta_original: str, dados_brutos: str) -> str:
     """
-    Nova Função: Recebe a pergunta que o usuário fez e os dados que o banco retornou,
-    e pede para o Qwen gerar uma análise de negócios resumida.
+    Recebe a pergunta que o usuário fez e os dados que o banco retornou,
+    e pede para o modelo gerar uma análise de negócios resumida.
     """
     prompt_sistema = (
         "Você é um analista de dados e de negócios experiente. "
@@ -77,16 +108,15 @@ def analisar_dados(pergunta_original: str, dados_brutos: str) -> str:
     
     try:
         resposta = ollama.generate(
-            model='gemma4:e4b', # troquei co qwen2.5-coder:7b, pois errava muito SQL
+            model='gemma4:e4b',
             system=prompt_sistema,
             prompt=prompt_usuario,
-            options={"temperature": 0.5} # Temperatura ligeiramente maior para o texto soar mais natural e menos robótico
+            options={"temperature": 0.5} 
         )
         return resposta['response'].strip()
         
     except Exception as e:
         return f"Erro ao gerar análise: {str(e)}"
-
 
 # Bloco de teste atualizado
 if __name__ == "__main__":
@@ -99,9 +129,8 @@ if __name__ == "__main__":
     
     print("1. Testando Geração de SQL...")
     sql = gerar_sql(pergunta_teste, schema_teste)
-    print(f"SQL: {sql}\n")
+    print(f"SQL:\n{sql}\n")
     
-    # Simulação dos dados que o banco devolveria para esse SQL
     dados_simulados_banco = """
     | nome          | valor_total |
     |---------------|-------------|
