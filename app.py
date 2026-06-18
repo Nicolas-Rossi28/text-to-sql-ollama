@@ -53,6 +53,7 @@ if botao_conectar:
         st.session_state['conectado'] = False
         
 
+
 # ---------------------------------------------------------------------------
 # INTERFACE PRINCIPAL DE CHAT (só exibe se estiver conectado)
 # ---------------------------------------------------------------------------
@@ -66,7 +67,10 @@ if st.session_state.get('conectado', False):
 
     # 1. RENDERIZA O HISTÓRICO VISUAL
     for msg in st.session_state['mensagens']:
-        with st.chat_message(msg["role"]):
+        # Define o ícone correto dependendo de quem está falando
+        icone_avatar = "🧙‍♂️" if msg["role"] == "assistant" else "👤"
+        
+        with st.chat_message(msg["role"], avatar=icone_avatar):
             st.write(msg["content"])
             
             # Se a mensagem do assistente contiver SQL, desenha o bloco de código
@@ -82,8 +86,9 @@ if st.session_state.get('conectado', False):
         col1, col2, col3 = st.columns([4, 4, 2]) # Alinha à direita
         with col3:
             if st.button("🔮 Gerar Insights da Última Consulta", use_container_width=True):
-                with st.chat_message("assistant"):
-                    with st.spinner("Analisando os registros gerados..."):
+                # Avatar de mago também no momento da análise!
+                with st.chat_message("assistant", avatar="🧙‍♂️"):
+                    with st.spinner("Abadats está utilizando de magia negra para analisar os dados..."):
                         pergunta_ref = st.session_state['pergunta_para_insight']
                         dados_brutos = st.session_state['dados_para_insight']
                         
@@ -102,26 +107,25 @@ if st.session_state.get('conectado', False):
                 st.rerun()
 
     # 3. CAMPO DE ENTRADA DO CHAT
-    if pergunta := st.chat_input("Digite sua pergunta em português (Ex: 'Quais produtos estão sem estoque?'):"):
+    if pergunta := st.chat_input("Digite sua pergunta em português:"):
         
-        # Exibe a pergunta na tela imediatamente
-        with st.chat_message("user"):
+        # Exibe a pergunta na tela imediatamente com o ícone de usuário
+        with st.chat_message("user", avatar="👤"):
             st.write(pergunta)
             
         # Salva a pergunta no histórico visual
         st.session_state['mensagens'].append({"role": "user", "content": pergunta})
         
-        # Inicia a resposta do assistente
-        with st.chat_message("assistant"):
-            with st.spinner("Pensando... Traduzindo para SQL..."):
+        # Inicia a resposta do assistente com o ícone de mago
+        with st.chat_message("assistant", avatar="🧙‍♂️"):
+            with st.spinner("Abadats está consultando o oraculo para gerar a query..."):
                 
-                # A MÁGICA ACONTECE AQUI: Chamamos a IA apenas com a pergunta atual (sem histórico)
                 sql_gerado = gerar_sql(pergunta, st.session_state['esquema'])
                 
             st.code(sql_gerado, language="sql")
             
             try:
-                with st.spinner("Executando query no banco de dados..."):
+                with st.spinner("Abadats está executando a query no banco de dados..."):
                     df_resultados = executar_query(sql_gerado, st.session_state['engine'])
                 
                 if not df_resultados.empty:
