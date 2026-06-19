@@ -174,6 +174,27 @@ A aplicação abre em `http://localhost:8501`. As credenciais do banco (host, po
 
 ---
 
+## Hardware utilizado para o desenvolvimento
+
+CPU: I5 12400F
+GPU: RTX 3070ti 8GB 
+OS: Windows 11
+RAM: 16GB ddr4 
+MEMORIA: SSD 1tb sata 3
+
+---
+
+## Design
+
+A interface do **Abadats.AI** foi projetada quebrando o padrão sóbrio e puramente técnico de ferramentas tradicionais de banco de dados. Como o processo de traduzir linguagem natural para código estruturado e executar queries complexas em segundos pode parecer "mágica" para o usuário final, adotou-se o design lúdico focado na **metáfora de um mago e seus rituais místicos**.
+
+---
+
 ## Conclusão
 
 O Abadats.AI demonstra a aplicação de engenharia de prompts e introspecção de schema via SQLAlchemy para reduzir a barreira entre linguagem natural e consulta a bancos relacionais, mantendo a operação restrita a leitura de dados.
+
+# Autor
+
+Nicolas Rossi Gariba
+github.com/Nicolas-Rossi28
